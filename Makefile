@@ -151,7 +151,7 @@ CFLAGS+=-fwrapv # ensure that signed overflows behave as expected
 ifdef CONFIG_WERROR
 CFLAGS+=-Werror
 endif
-DEFINES:=-D_GNU_SOURCE -DCONFIG_VERSION=\"$(shell cat VERSION)\"
+DEFINES:=-D_GNU_SOURCE -DCONFIG_VERSION=\"$(shell cat VERSION)\" -DCONFIG_COMPILER -DCONFIG_JSON -DCONFIG_REGEXP_COMPILER
 ifdef CONFIG_WIN32
 DEFINES+=-D__USE_MINGW_ANSI_STDIO # for standard snprintf behavior
 endif
@@ -216,9 +216,9 @@ else
 QJSC_CC=$(CC)
 QJSC=./qjsc$(EXE)
 endif
-PROGS+=libquickjs.a
+PROGS+=libquickjs.a libquickjs.runtime.a
 ifdef CONFIG_LTO
-PROGS+=libquickjs.lto.a
+PROGS+=libquickjs.lto.a libquickjs.runtime.lto.a
 endif
 
 # examples
@@ -244,6 +244,7 @@ endif
 all: $(OBJDIR) $(OBJDIR)/quickjs.check.o $(OBJDIR)/qjs.check.o $(PROGS)
 
 QJS_LIB_OBJS=$(OBJDIR)/quickjs.o $(OBJDIR)/dtoa.o $(OBJDIR)/libregexp.o $(OBJDIR)/libunicode.o $(OBJDIR)/cutils.o $(OBJDIR)/quickjs-libc.o
+QJS_LIB_RUNTIME_OBJS=$(OBJDIR)/quickjs.runtime.o $(OBJDIR)/dtoa.o $(OBJDIR)/libregexp.o $(OBJDIR)/libunicode.o $(OBJDIR)/cutils.o $(OBJDIR)/quickjs-libc.o
 
 QJS_OBJS=$(OBJDIR)/qjs.o $(OBJDIR)/repl.o $(QJS_LIB_OBJS)
 
@@ -303,8 +304,14 @@ endif
 libquickjs$(LTOEXT).a: $(QJS_LIB_OBJS)
 	$(AR) rcs $@ $^
 
+libquickjs.runtime$(LTOEXT).a: $(QJS_LIB_RUNTIME_OBJS)
+	$(AR) rcs $@ $^
+
 ifdef CONFIG_LTO
 libquickjs.a: $(patsubst %.o, %.nolto.o, $(QJS_LIB_OBJS))
+	$(AR) rcs $@ $^
+
+libquickjs.runtime.a: $(patsubst %.o, %.nolto.o, $(QJS_LIB_RUNTIME_OBJS))
 	$(AR) rcs $@ $^
 endif # CONFIG_LTO
 
@@ -331,6 +338,12 @@ run-test262-debug: $(patsubst %.o, %.debug.o, $(OBJDIR)/run-test262.o $(QJS_LIB_
 
 $(OBJDIR)/%.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_OPT) -c -o $@ $<
+
+$(OBJDIR)/quickjs.runtime.o: quickjs.c | $(OBJDIR)
+	$(CC) $(CFLAGS_OPT) -UCONFIG_COMPILER -UCONFIG_REGEXP_COMPILER -c -o $@ $<
+
+$(OBJDIR)/quickjs.runtime.nolto.o: quickjs.c | $(OBJDIR)
+	$(CC) $(CFLAGS_NOLTO) -UCONFIG_COMPILER -UCONFIG_REGEXP_COMPILER -c -o $@ $<
 
 $(OBJDIR)/fuzz_%.o: fuzz/fuzz_%.c | $(OBJDIR)
 	$(CC) $(CFLAGS_OPT) -c -I. -o $@ $<

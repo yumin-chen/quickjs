@@ -2217,7 +2217,9 @@ JSContext *JS_NewContext(JSRuntime *rt)
 
     if (JS_AddIntrinsicBaseObjects(ctx) ||
         JS_AddIntrinsicDate(ctx) ||
+#ifdef CONFIG_COMPILER
         JS_AddIntrinsicEval(ctx) ||
+#endif
         JS_AddIntrinsicStringNormalize(ctx) ||
         JS_AddIntrinsicRegExp(ctx) ||
         JS_AddIntrinsicJSON(ctx) ||
@@ -21536,6 +21538,8 @@ typedef struct JSFunctionDef {
     BOOL has_await; /* TRUE if await is used (used in module eval) */
 } JSFunctionDef;
 
+#if defined(CONFIG_COMPILER) || defined(CONFIG_JSON)
+
 typedef struct JSToken {
     int val;
     const uint8_t *ptr; /* position in the source */
@@ -21577,6 +21581,8 @@ typedef struct JSParseState {
     GetLineColCache get_line_col_cache;
 } JSParseState;
 
+#endif /* CONFIG_COMPILER || CONFIG_JSON */
+
 typedef struct JSOpCode {
 #ifdef DUMP_BYTECODE
     const char *name;
@@ -21613,8 +21619,11 @@ static const JSOpCode opcode_info[OP_COUNT + (OP_TEMP_END - OP_TEMP_START)] = {
 #define short_opcode_info(op) opcode_info[op]
 #endif
 
+#ifdef CONFIG_COMPILER
 static __exception int next_token(JSParseState *s);
+#endif
 
+#if defined(CONFIG_COMPILER) || defined(CONFIG_JSON)
 static void free_token(JSParseState *s, JSToken *token)
 {
     switch(token->val) {
@@ -21794,6 +21803,9 @@ static __attribute__((format(printf, 2, 3))) int js_parse_error(JSParseState *s,
     return ret;
 }
 
+#endif /* CONFIG_COMPILER || CONFIG_JSON */
+
+#ifdef CONFIG_COMPILER
 static int js_parse_expect(JSParseState *s, int tok)
 {
     if (s->token.val != tok) {
@@ -22136,6 +22148,9 @@ static __exception int js_parse_regexp(JSParseState *s)
     return -1;
 }
 
+#endif /* CONFIG_COMPILER */
+
+#if defined(CONFIG_COMPILER) || defined(CONFIG_JSON)
 static __exception int ident_realloc(JSContext *ctx, char **pbuf, size_t *psize,
                                      char *static_buf)
 {
@@ -22162,6 +22177,9 @@ static __exception int ident_realloc(JSContext *ctx, char **pbuf, size_t *psize,
     *psize = new_size;
     return 0;
 }
+#endif /* CONFIG_COMPILER || CONFIG_JSON */
+
+#ifdef CONFIG_COMPILER
 
 /* convert a TOK_IDENT to a keyword when needed */
 static void update_token_ident(JSParseState *s)
@@ -22252,8 +22270,9 @@ static JSAtom parse_ident(JSParseState *s, const uint8_t **pp,
     *pp = p;
     return atom;
 }
+#endif /* CONFIG_COMPILER */
 
-
+#ifdef CONFIG_COMPILER
 static __exception int next_token(JSParseState *s)
 {
     const uint8_t *p;
@@ -22695,6 +22714,7 @@ static __exception int next_token(JSParseState *s)
     s->token.val = TOK_ERROR;
     return -1;
 }
+#endif /* CONFIG_COMPILER */
 
 /* 'c' is the first character. Return JS_ATOM_NULL in case of error */
 /* XXX: accept unicode identifiers as JSON5 ? */
@@ -36493,6 +36513,7 @@ static __exception int js_parse_function_decl(JSParseState *s,
                                    JS_PARSE_EXPORT_NONE, NULL);
 }
 
+#ifdef CONFIG_COMPILER
 static __exception int js_parse_program(JSParseState *s)
 {
     JSFunctionDef *fd = s->cur_func;
@@ -36545,6 +36566,9 @@ static __exception int js_parse_program(JSParseState *s)
     return 0;
 }
 
+#endif /* CONFIG_COMPILER */
+
+#if defined(CONFIG_COMPILER) || defined(CONFIG_JSON)
 static void js_parse_init(JSContext *ctx, JSParseState *s,
                           const char *input, size_t input_len,
                           const char *filename)
@@ -36562,6 +36586,7 @@ static void js_parse_init(JSContext *ctx, JSParseState *s,
     s->get_line_col_cache.line_num = 0;
     s->get_line_col_cache.col_num = 0;
 }
+#endif /* CONFIG_COMPILER || CONFIG_JSON */
 
 static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
                                        JSValueConst this_obj,
@@ -36603,6 +36628,7 @@ JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
 }
 
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
+#ifdef CONFIG_COMPILER
 static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
                                  const char *filename, int flags, int scope_idx)
@@ -36717,6 +36743,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
     return JS_EXCEPTION;
 }
+#endif /* CONFIG_COMPILER */
 
 /* the indirection is needed to make 'eval' optional */
 static JSValue JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
@@ -46870,6 +46897,7 @@ static void js_regexp_finalizer(JSRuntime *rt, JSValue val)
 }
 
 /* create a string containing the RegExp bytecode */
+#ifdef CONFIG_REGEXP_COMPILER
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags)
 {
@@ -46947,6 +46975,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     js_free(ctx, re_bytecode_buf);
     return ret;
 }
+#endif /* CONFIG_REGEXP_COMPILER */
 
 /* fast regexp creation */
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc)
@@ -47103,7 +47132,11 @@ static JSValue js_regexp_constructor(JSContext *ctx, JSValueConst new_target,
     obj = js_create_from_ctor(ctx, new_target, JS_CLASS_REGEXP);
     if (JS_IsException(obj))
         goto fail;
+#ifdef CONFIG_REGEXP_COMPILER
     bc = js_compile_regexp(ctx, pattern, flags);
+#else
+    bc = JS_ThrowTypeError(ctx, "RegExp compilation is not supported");
+#endif
     if (JS_IsException(bc))
         goto fail;
     JS_FreeValue(ctx, flags);
@@ -47142,7 +47175,11 @@ static JSValue js_regexp_compile(JSContext *ctx, JSValueConst this_val,
             pattern = JS_ToString(ctx, pattern1);
         if (JS_IsException(pattern))
             goto fail;
+#ifdef CONFIG_REGEXP_COMPILER
         bc = js_compile_regexp(ctx, pattern, flags1);
+#else
+        bc = JS_ThrowTypeError(ctx, "RegExp compilation is not supported");
+#endif
         if (JS_IsException(bc))
             goto fail;
     }
@@ -48566,7 +48603,9 @@ static const JSCFunctionListEntry js_regexp_string_iterator_proto_funcs[] = {
 
 void JS_AddIntrinsicRegExpCompiler(JSContext *ctx)
 {
+#ifdef CONFIG_REGEXP_COMPILER
     ctx->compile_regexp = js_compile_regexp;
+#endif
 }
 
 int JS_AddIntrinsicRegExp(JSContext *ctx)
@@ -48762,6 +48801,7 @@ static JSONParseRecord *json_parse_record_find(JSONParseRecord *pr, JSAtom key)
     return NULL;
 }
 
+#ifdef CONFIG_JSON
 static void json_free_parse_record(JSContext *ctx, JSONParseRecord *pr)
 {
     int i;
@@ -48998,6 +49038,13 @@ JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
     free_token(s, &s->token);
     return JS_EXCEPTION;
 }
+#else
+JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
+                      const char *filename, int flags, JSONParseRecord *pr)
+{
+    return JS_ThrowTypeError(ctx, "JSON.parse is not supported");
+}
+#endif /* CONFIG_JSON */
 
 JSValue JS_ParseJSON2(JSContext *ctx, const char *buf, size_t buf_len,
                       const char *filename, int flags)
@@ -49127,6 +49174,7 @@ static JSValue js_json_parse(JSContext *ctx, JSValueConst this_val,
     str = JS_ToCStringLen(ctx, &len, argv[0]);
     if (!str)
         return JS_EXCEPTION;
+#ifdef CONFIG_JSON
     if (argc > 1 && JS_IsFunction(ctx, argv[1])) {
         JSONParseRecord pr_s, *pr = &pr_s, *pr1;
         JSValue root;
@@ -49163,6 +49211,9 @@ static JSValue js_json_parse(JSContext *ctx, JSValueConst this_val,
     } else {
         obj = JS_ParseJSON3(ctx, str, len, "<input>", 0, NULL);
     }
+#else
+    obj = JS_ParseJSON3(ctx, str, len, "<input>", 0, NULL);
+#endif
     JS_FreeCString(ctx, str);
     return obj;
  fail:
@@ -55479,8 +55530,12 @@ int JS_AddIntrinsicDate(JSContext *ctx)
 
 int JS_AddIntrinsicEval(JSContext *ctx)
 {
+#ifdef CONFIG_COMPILER
     ctx->eval_internal = __JS_EvalInternal;
     return 0;
+#else
+    return -1;
+#endif
 }
 
 /* BigInt */
