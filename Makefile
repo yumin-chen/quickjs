@@ -34,7 +34,7 @@ endif
 # to /usr/x86_64-w64-mingw32/lib/libwinpthread-1.dll)
 #CONFIG_WIN32=y
 # use link time optimization (smaller and faster executables but slower build)
-#CONFIG_LTO=y
+CONFIG_LTO=y
 # consider warnings as errors (for development)
 #CONFIG_WERROR=y
 # force 32 bit build on x86_64
