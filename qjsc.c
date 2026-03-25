@@ -74,6 +74,9 @@ static const FeatureEntry feature_list[] = {
     { "map", "MapSet" },
     { "typedarray", "TypedArrays" },
     { "promise", "Promise" },
+#define FE_EVAL 1
+#define FE_REGEXP 3
+#define FE_JSON 4
 #define FE_MODULE_LOADER 9
     { "module-loader", NULL },
     { "weakref", "WeakRef" },
@@ -447,7 +450,8 @@ int exec_cmd(char **argv)
 }
 
 static int output_executable(const char *out_filename, const char *cfilename,
-                             BOOL use_lto, BOOL verbose, const char *exename)
+                             BOOL use_lto, BOOL verbose, const char *exename,
+                             BOOL bytecode_only)
 {
     const char *argv[64];
     const char **arg, *bn_suffix, *lto_suffix;
@@ -497,6 +501,8 @@ static int output_executable(const char *out_filename, const char *cfilename,
     *arg++ = out_filename;
     if (dynamic_export)
         *arg++ = "-rdynamic";
+    if (bytecode_only)
+        *arg++ = "-DCONFIG_BYTECODE_ONLY_RUNTIME";
     *arg++ = cfilename;
     snprintf(libjsname, sizeof(libjsname), "%s/libquickjs%s%s.a",
              lib_dir, bn_suffix, lto_suffix);
@@ -518,7 +524,8 @@ static int output_executable(const char *out_filename, const char *cfilename,
 }
 #else
 static int output_executable(const char *out_filename, const char *cfilename,
-                             BOOL use_lto, BOOL verbose, const char *exename)
+                             BOOL use_lto, BOOL verbose, const char *exename,
+                             BOOL bytecode_only)
 {
     fprintf(stderr, "Executable output is not supported for this target\n");
     exit(1);
@@ -581,7 +588,7 @@ int main(int argc, char **argv)
     FILE *fo;
     JSRuntime *rt;
     JSContext *ctx;
-    BOOL use_lto;
+    BOOL use_lto, bytecode_only;
     int module;
     OutputTypeEnum output_type;
     size_t stack_size;
@@ -596,6 +603,7 @@ int main(int argc, char **argv)
     verbose = 0;
     strip_flags = JS_STRIP_SOURCE;
     use_lto = FALSE;
+    bytecode_only = FALSE;
     stack_size = 0;
     memset(&dynamic_module_list, 0, sizeof(dynamic_module_list));
 
@@ -866,8 +874,13 @@ int main(int argc, char **argv)
     fclose(fo);
 
     if (output_type == OUTPUT_EXECUTABLE) {
+        bytecode_only = (use_lto &&
+                         !(feature_bitmap & ((uint64_t)1 << FE_EVAL)) &&
+                         !(feature_bitmap & ((uint64_t)1 << FE_REGEXP)) &&
+                         !(feature_bitmap & ((uint64_t)1 << FE_JSON)) &&
+                         !(feature_bitmap & ((uint64_t)1 << FE_MODULE_LOADER)));
         return output_executable(out_filename, cfilename, use_lto, verbose,
-                                 argv[0]);
+                                 argv[0], bytecode_only);
     }
     namelist_free(&cname_list);
     namelist_free(&cmodule_list);
