@@ -1,0 +1,14 @@
+Measuring configuration: baseline-original (CONFIG_LTO=n, flags=)
+Results for baseline-original:
+hello_baseline-original: 4959848
+pi_baseline-original: 4963952
+hello_mod_baseline-original: 4960072
+-----------------------------------
+Measuring configuration: baseline-lto-full-feature (CONFIG_LTO=y, flags=-flto)
+Measuring configuration: baseline-lto-full-feature (CONFIG_LTO=y, flags=-flto)
+lto-wrapper: warning: using serial compilation of 16 LTRANS jobs
+lto-wrapper: note: see the ‘-flto’ option documentation for more information
+lto-wrapper: warning: using serial compilation of 16 LTRANS jobs
+lto-wrapper: note: see the ‘-flto’ option documentation for more information
+lto-wrapper: warning: using serial compilation of 16 LTRANS jobs
+lto-wrapper: note: see the ‘-flto’ option documentation for more information
