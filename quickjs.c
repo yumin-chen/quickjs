@@ -1195,8 +1195,10 @@ static int JS_ToInt32Free(JSContext *ctx, int32_t *pres, JSValue val);
 static int JS_ToFloat64Free(JSContext *ctx, double *pres, JSValue val);
 static int JS_ToUint8ClampFree(JSContext *ctx, int32_t *pres, JSValue val);
 static JSValue js_new_string8_len(JSContext *ctx, const char *buf, int len);
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags);
+#endif
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc);
 static void gc_decref(JSRuntime *rt);
 static int JS_NewClass1(JSRuntime *rt, JSClassID class_id,
@@ -35439,6 +35441,7 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
 /* create a function object from a function definition. The function
    definition is freed. All the child functions are also created. It
    must be done this way to resolve all the variables. */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
 {
     JSValue func_obj;
@@ -35697,6 +35700,7 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
     js_free_function_def(ctx, fd);
     return JS_EXCEPTION;
 }
+#endif
 
 static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
 {
@@ -36493,6 +36497,7 @@ static __exception int js_parse_function_decl(JSParseState *s,
                                    JS_PARSE_EXPORT_NONE, NULL);
 }
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static __exception int js_parse_program(JSParseState *s)
 {
     JSFunctionDef *fd = s->cur_func;
@@ -36544,6 +36549,7 @@ static __exception int js_parse_program(JSParseState *s)
 
     return 0;
 }
+#endif
 
 static void js_parse_init(JSContext *ctx, JSParseState *s,
                           const char *input, size_t input_len,
@@ -36603,6 +36609,7 @@ JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
 }
 
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
                                  const char *filename, int flags, int scope_idx)
@@ -36717,6 +36724,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
     return JS_EXCEPTION;
 }
+#endif
 
 /* the indirection is needed to make 'eval' optional */
 static JSValue JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
@@ -46870,6 +46878,7 @@ static void js_regexp_finalizer(JSRuntime *rt, JSValue val)
 }
 
 /* create a string containing the RegExp bytecode */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags)
 {
@@ -46947,6 +46956,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     js_free(ctx, re_bytecode_buf);
     return ret;
 }
+#endif
 
 /* fast regexp creation */
 static JSValue JS_NewRegexp(JSContext *ctx, JSValue pattern, JSValue bc)
@@ -47103,7 +47113,11 @@ static JSValue js_regexp_constructor(JSContext *ctx, JSValueConst new_target,
     obj = js_create_from_ctor(ctx, new_target, JS_CLASS_REGEXP);
     if (JS_IsException(obj))
         goto fail;
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     bc = js_compile_regexp(ctx, pattern, flags);
+#else
+    bc = JS_UNDEFINED;
+#endif
     if (JS_IsException(bc))
         goto fail;
     JS_FreeValue(ctx, flags);
@@ -47142,7 +47156,11 @@ static JSValue js_regexp_compile(JSContext *ctx, JSValueConst this_val,
             pattern = JS_ToString(ctx, pattern1);
         if (JS_IsException(pattern))
             goto fail;
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
         bc = js_compile_regexp(ctx, pattern, flags1);
+#else
+        bc = JS_UNDEFINED;
+#endif
         if (JS_IsException(bc))
             goto fail;
     }
@@ -48566,7 +48584,9 @@ static const JSCFunctionListEntry js_regexp_string_iterator_proto_funcs[] = {
 
 void JS_AddIntrinsicRegExpCompiler(JSContext *ctx)
 {
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     ctx->compile_regexp = js_compile_regexp;
+#endif
 }
 
 int JS_AddIntrinsicRegExp(JSContext *ctx)
@@ -55479,7 +55499,9 @@ int JS_AddIntrinsicDate(JSContext *ctx)
 
 int JS_AddIntrinsicEval(JSContext *ctx)
 {
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     ctx->eval_internal = __JS_EvalInternal;
+#endif
     return 0;
 }
 
