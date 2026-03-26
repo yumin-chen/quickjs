@@ -434,6 +434,9 @@ uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len, const char *filename)
 static JSValue js_loadScript(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "loadScript is not supported");
+#else
     uint8_t *buf;
     const char *filename;
     JSValue ret;
@@ -453,6 +456,8 @@ static JSValue js_loadScript(JSContext *ctx, JSValueConst this_val,
     js_free(ctx, buf);
     JS_FreeCString(ctx, filename);
     return ret;
+
+#endif
 }
 
 /* load a file as a UTF-8 encoded string */
@@ -695,6 +700,11 @@ JSModuleDef *js_module_loader(JSContext *ctx,
         }
         res = js_module_test_json(ctx, attributes);
         if (has_suffix(module_name, ".json") || res > 0) {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+            js_free(ctx, buf);
+            JS_ThrowTypeError(ctx, "JSON module is not supported");
+            return NULL;
+#else
             /* compile as JSON or JSON5 depending on "type" */
             JSValue val;
             int flags;
@@ -709,7 +719,14 @@ JSModuleDef *js_module_loader(JSContext *ctx,
             m = create_json_module(ctx, module_name, val);
             if (!m)
                 return NULL;
-        } else {
+
+#endif
+} else {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+            js_free(ctx, buf);
+            JS_ThrowTypeError(ctx, "Source module is not supported");
+            return NULL;
+#else
             JSValue func_val;
             /* compile the module */
             func_val = JS_Eval(ctx, (char *)buf, buf_len, module_name,
@@ -722,7 +739,9 @@ JSModuleDef *js_module_loader(JSContext *ctx,
             /* the module is already referenced, so we must free it */
             m = JS_VALUE_GET_PTR(func_val);
             JS_FreeValue(ctx, func_val);
-        }
+
+#endif
+}
     }
     return m;
 }
@@ -873,6 +892,9 @@ static int get_bool_option(JSContext *ctx, BOOL *pbool,
 static JSValue js_evalScript(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "evalScript is not supported");
+#else
     JSRuntime *rt = JS_GetRuntime(ctx);
     JSThreadState *ts = JS_GetRuntimeOpaque(rt);
     const char *str;
@@ -917,6 +939,8 @@ static JSValue js_evalScript(JSContext *ctx, JSValueConst this_val,
             JS_SetUncatchableException(ctx, FALSE);
     }
     return ret;
+
+#endif
 }
 
 static JSClassID js_std_file_class_id;
@@ -960,6 +984,9 @@ static JSValue js_std_strerror(JSContext *ctx, JSValueConst this_val,
 static JSValue js_std_parseExtJSON(JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "parseExtJSON is not supported");
+#else
     JSValue obj;
     const char *str;
     size_t len;
@@ -970,6 +997,8 @@ static JSValue js_std_parseExtJSON(JSContext *ctx, JSValueConst this_val,
     obj = JS_ParseJSON2(ctx, str, len, "<input>", JS_PARSE_JSON_EXT);
     JS_FreeCString(ctx, str);
     return obj;
+
+#endif
 }
 
 static JSValue js_new_std_file(JSContext *ctx, FILE *f,

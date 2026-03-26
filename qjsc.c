@@ -57,6 +57,20 @@ static namelist_t cname_list;
 static namelist_t cmodule_list;
 static namelist_t init_module_list;
 static uint64_t feature_bitmap;
+
+#define FE_EVAL          1
+#define FE_REGEXP        3
+#define FE_JSON          4
+#define FE_MODULE_LOADER 9
+
+static BOOL is_bytecode_only(void)
+{
+    return (feature_bitmap & (((uint64_t)1 << FE_EVAL) |
+                              ((uint64_t)1 << FE_REGEXP) |
+                              ((uint64_t)1 << FE_JSON) |
+                              ((uint64_t)1 << FE_MODULE_LOADER))) == 0;
+}
+
 static FILE *outfile;
 static BOOL byte_swap;
 static BOOL dynamic_export;
@@ -447,7 +461,8 @@ int exec_cmd(char **argv)
 }
 
 static int output_executable(const char *out_filename, const char *cfilename,
-                             BOOL use_lto, BOOL verbose, const char *exename)
+                             BOOL use_lto, BOOL verbose, const char *exename,
+                             const char *lib_suffix)
 {
     const char *argv[64];
     const char **arg, *bn_suffix, *lto_suffix;
@@ -498,8 +513,8 @@ static int output_executable(const char *out_filename, const char *cfilename,
     if (dynamic_export)
         *arg++ = "-rdynamic";
     *arg++ = cfilename;
-    snprintf(libjsname, sizeof(libjsname), "%s/libquickjs%s%s.a",
-             lib_dir, bn_suffix, lto_suffix);
+    snprintf(libjsname, sizeof(libjsname), "%s/libquickjs%s%s%s.a",
+             lib_dir, lib_suffix, bn_suffix, lto_suffix);
     *arg++ = libjsname;
     *arg++ = "-lm";
     *arg++ = "-ldl";
@@ -518,7 +533,8 @@ static int output_executable(const char *out_filename, const char *cfilename,
 }
 #else
 static int output_executable(const char *out_filename, const char *cfilename,
-                             BOOL use_lto, BOOL verbose, const char *exename)
+                             BOOL use_lto, BOOL verbose, const char *exename,
+                             const char *lib_suffix)
 {
     fprintf(stderr, "Executable output is not supported for this target\n");
     exit(1);
@@ -768,6 +784,8 @@ int main(int argc, char **argv)
             );
 
     if (output_type != OUTPUT_C) {
+        if (is_bytecode_only())
+            fprintf(fo, "#define CONFIG_BYTECODE_ONLY_RUNTIME\n");
         fprintf(fo, "#include \"quickjs-libc.h\"\n"
                 "\n"
                 );
@@ -866,8 +884,9 @@ int main(int argc, char **argv)
     fclose(fo);
 
     if (output_type == OUTPUT_EXECUTABLE) {
+        const char *lib_suffix = is_bytecode_only() ? "-bytecode" : "";
         return output_executable(out_filename, cfilename, use_lto, verbose,
-                                 argv[0]);
+                                 argv[0], lib_suffix);
     }
     namelist_free(&cname_list);
     namelist_free(&cmodule_list);
