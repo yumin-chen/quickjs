@@ -245,6 +245,10 @@ all: $(OBJDIR) $(OBJDIR)/quickjs.check.o $(OBJDIR)/qjs.check.o $(PROGS)
 
 QJS_LIB_OBJS=$(OBJDIR)/quickjs.o $(OBJDIR)/dtoa.o $(OBJDIR)/libregexp.o $(OBJDIR)/libunicode.o $(OBJDIR)/cutils.o $(OBJDIR)/quickjs-libc.o
 
+OBJDIR_RT=.obj-rt
+QJS_BYTECODE_OBJS=$(patsubst $(OBJDIR)/%.o, $(OBJDIR_RT)/%.bytecode.o, $(QJS_LIB_OBJS))
+QJS_BYTECODE_LTO_OBJS=$(patsubst $(OBJDIR)/%.o, $(OBJDIR_RT)/%.bytecode.lto.o, $(QJS_LIB_OBJS))
+
 QJS_OBJS=$(OBJDIR)/qjs.o $(OBJDIR)/repl.o $(QJS_LIB_OBJS)
 
 HOST_LIBS=-lm -ldl -lpthread
@@ -256,6 +260,9 @@ LIBS+=$(EXTRA_LIBS)
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR) $(OBJDIR)/examples $(OBJDIR)/tests
+
+$(OBJDIR_RT):
+	mkdir -p $(OBJDIR_RT)
 
 qjs$(EXE): $(QJS_OBJS)
 	$(CC) $(LDFLAGS) $(LDEXPORT) -o $@ $^ $(LIBS)
@@ -308,6 +315,12 @@ libquickjs.a: $(patsubst %.o, %.nolto.o, $(QJS_LIB_OBJS))
 	$(AR) rcs $@ $^
 endif # CONFIG_LTO
 
+libquickjs-bytecode.a: $(QJS_BYTECODE_OBJS)
+	$(AR) rcs $@ $^
+
+libquickjs-bytecode.lto.a: $(QJS_BYTECODE_LTO_OBJS)
+	$(AR) rcs $@ $^
+
 libquickjs.fuzz.a: $(patsubst %.o, %.fuzz.o, $(QJS_LIB_OBJS))
 	$(AR) rcs $@ $^
 
@@ -353,6 +366,12 @@ $(OBJDIR)/%.fuzz.o: %.c | $(OBJDIR)
 $(OBJDIR)/%.check.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -DCONFIG_CHECK_JSVALUE -c -o $@ $<
 
+$(OBJDIR_RT)/%.bytecode.o: %.c | $(OBJDIR_RT)
+	$(CC) $(CFLAGS_NOLTO) -MF $(OBJDIR_RT)/$(@F).d -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
+
+$(OBJDIR_RT)/%.bytecode.lto.o: %.c | $(OBJDIR_RT)
+	$(CC) $(CFLAGS_OPT) -MF $(OBJDIR_RT)/$(@F).d -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
+
 regexp_test: libregexp.c libunicode.c cutils.c
 	$(CC) $(LDFLAGS) $(CFLAGS) -DTEST -o $@ libregexp.c libunicode.c cutils.c $(LIBS)
 
@@ -362,6 +381,7 @@ unicode_gen: $(OBJDIR)/unicode_gen.host.o $(OBJDIR)/cutils.host.o libunicode.c u
 clean:
 	rm -f repl.c out.c
 	rm -f *.a *.o *.d *~ unicode_gen regexp_test fuzz_eval fuzz_compile fuzz_regexp $(PROGS)
+	rm -rf $(OBJDIR_RT)
 	rm -f hello.c test_fib.c
 	rm -f examples/*.so tests/*.so
 	rm -rf $(OBJDIR)/ *.dSYM/ qjs-debug$(EXE)
@@ -445,6 +465,14 @@ doc/%.html: doc/%.html.pre
 ifdef CONFIG_SHARED_LIBS
 test: tests/bjson.so examples/point.so
 endif
+
+test-bytecode-runtime: libquickjs-bytecode.a libquickjs-bytecode.lto.a qjsc$(EXE)
+	$(QJSC) -flto -fno-eval -fno-regexp -fno-json -fno-module-loader \
+	        -o tests/test-bytecode-rt tests/test_bytecode_runtime.js
+	@nm tests/test-bytecode-rt | grep -E ' [Tt] (__JS_EvalInternal|js_parse_|js_compile_|js_evalScript|js_loadScript|js_std_parseExtJSON|js_worker_ctor)' \
+	    && (echo "FAIL: parser symbols found in bytecode-only binary" && exit 1) \
+	    || echo "PASS: no parser symbols"
+	@tests/test-bytecode-rt
 
 test: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) tests/test_closure.js
