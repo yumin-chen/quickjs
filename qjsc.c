@@ -36,6 +36,10 @@
 #include "cutils.h"
 #include "quickjs-libc.h"
 
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+#error "qjsc must be built with the full QuickJS engine"
+#endif
+
 typedef struct {
     char *name;
     char *short_name;
@@ -63,6 +67,7 @@ static BOOL dynamic_export;
 static const char *c_ident_prefix = "qjsc_";
 
 #define FE_ALL (-1)
+#define FE_MASK(i) ((uint64_t)1 << (i))
 
 static const FeatureEntry feature_list[] = {
     { "date", "Date" },
@@ -78,6 +83,14 @@ static const FeatureEntry feature_list[] = {
     { "module-loader", NULL },
     { "weakref", "WeakRef" },
 };
+
+#define BYTECODE_ONLY_TRIGGER_MASK \
+    (FE_MASK(1) | FE_MASK(3) | FE_MASK(4) | FE_MASK(FE_MODULE_LOADER))
+
+static BOOL runtime_needs_parser(void)
+{
+    return (feature_bitmap & BYTECODE_ONLY_TRIGGER_MASK) != 0;
+}
 
 void namelist_add(namelist_t *lp, const char *name, const char *short_name,
                   int flags)
@@ -450,7 +463,7 @@ static int output_executable(const char *out_filename, const char *cfilename,
                              BOOL use_lto, BOOL verbose, const char *exename)
 {
     const char *argv[64];
-    const char **arg, *bn_suffix, *lto_suffix;
+    const char **arg, *lib_suffix, *lto_suffix;
     char libjsname[1024];
     char exe_dir[1024], inc_dir[1024], lib_dir[1024], buf[1024], *p;
     int ret;
@@ -476,7 +489,7 @@ static int output_executable(const char *out_filename, const char *cfilename,
     }
 
     lto_suffix = "";
-    bn_suffix = "";
+    lib_suffix = runtime_needs_parser() ? "" : "-bytecode";
 
     arg = argv;
     *arg++ = CONFIG_CC;
@@ -499,7 +512,7 @@ static int output_executable(const char *out_filename, const char *cfilename,
         *arg++ = "-rdynamic";
     *arg++ = cfilename;
     snprintf(libjsname, sizeof(libjsname), "%s/libquickjs%s%s.a",
-             lib_dir, bn_suffix, lto_suffix);
+             lib_dir, lib_suffix, lto_suffix);
     *arg++ = libjsname;
     *arg++ = "-lm";
     *arg++ = "-ldl";

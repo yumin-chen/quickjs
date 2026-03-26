@@ -35439,6 +35439,7 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
 /* create a function object from a function definition. The function
    definition is freed. All the child functions are also created. It
    must be done this way to resolve all the variables. */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
 {
     JSValue func_obj;
@@ -35697,6 +35698,7 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
     js_free_function_def(ctx, fd);
     return JS_EXCEPTION;
 }
+#endif /* CONFIG_BYTECODE_ONLY_RUNTIME */
 
 static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
 {
@@ -35742,6 +35744,7 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
     }
 }
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static __exception int js_parse_directives(JSParseState *s)
 {
     char str[20];
@@ -36545,6 +36548,8 @@ static __exception int js_parse_program(JSParseState *s)
     return 0;
 }
 
+#endif /* CONFIG_BYTECODE_ONLY_RUNTIME */
+
 static void js_parse_init(JSContext *ctx, JSParseState *s,
                           const char *input, size_t input_len,
                           const char *filename)
@@ -36603,6 +36608,7 @@ JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
 }
 
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
                                  const char *filename, int flags, int scope_idx)
@@ -36717,6 +36723,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
     return JS_EXCEPTION;
 }
+#endif /* CONFIG_BYTECODE_ONLY_RUNTIME */
 
 /* the indirection is needed to make 'eval' optional */
 static JSValue JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
@@ -55479,7 +55486,11 @@ int JS_AddIntrinsicDate(JSContext *ctx)
 
 int JS_AddIntrinsicEval(JSContext *ctx)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    ctx->eval_internal = NULL;
+#else
     ctx->eval_internal = __JS_EvalInternal;
+#endif
     return 0;
 }
 

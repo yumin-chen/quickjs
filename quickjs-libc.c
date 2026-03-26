@@ -431,6 +431,7 @@ uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len, const char *filename)
 }
 
 /* load and evaluate a file */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_loadScript(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
@@ -454,6 +455,7 @@ static JSValue js_loadScript(JSContext *ctx, JSValueConst this_val,
     JS_FreeCString(ctx, filename);
     return ret;
 }
+#endif /* CONFIG_BYTECODE_ONLY_RUNTIME */
 
 /* load a file as a UTF-8 encoded string */
 static JSValue js_std_loadFile(JSContext *ctx, JSValueConst this_val,
@@ -679,8 +681,9 @@ JSModuleDef *js_module_loader(JSContext *ctx,
                               JSValueConst attributes)
 {
     JSModuleDef *m;
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     int res;
-    
+
     if (has_suffix(module_name, ".so")) {
         m = js_module_loader_so(ctx, module_name);
     } else {
@@ -724,6 +727,14 @@ JSModuleDef *js_module_loader(JSContext *ctx,
             JS_FreeValue(ctx, func_val);
         }
     }
+#else
+    if (has_suffix(module_name, ".so")) {
+        m = js_module_loader_so(ctx, module_name);
+    } else {
+        JS_ThrowReferenceError(ctx, "bytecode-only runtime only supports shared library modules");
+        return NULL;
+    }
+#endif
     return m;
 }
 
@@ -870,6 +881,7 @@ static int get_bool_option(JSContext *ctx, BOOL *pbool,
     return 0;
 }
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_evalScript(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
@@ -918,6 +930,7 @@ static JSValue js_evalScript(JSContext *ctx, JSValueConst this_val,
     }
     return ret;
 }
+#endif /* CONFIG_BYTECODE_ONLY_RUNTIME */
 
 static JSClassID js_std_file_class_id;
 
@@ -957,6 +970,7 @@ static JSValue js_std_strerror(JSContext *ctx, JSValueConst this_val,
     return JS_NewString(ctx, strerror(err));
 }
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_std_parseExtJSON(JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv)
 {
@@ -971,6 +985,7 @@ static JSValue js_std_parseExtJSON(JSContext *ctx, JSValueConst this_val,
     JS_FreeCString(ctx, str);
     return obj;
 }
+#endif /* CONFIG_BYTECODE_ONLY_RUNTIME */
 
 static JSValue js_new_std_file(JSContext *ctx, FILE *f,
                                BOOL close_in_finalizer,
@@ -1640,8 +1655,10 @@ static const JSCFunctionListEntry js_std_error_props[] = {
 static const JSCFunctionListEntry js_std_funcs[] = {
     JS_CFUNC_DEF("exit", 1, js_std_exit ),
     JS_CFUNC_DEF("gc", 0, js_std_gc ),
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     JS_CFUNC_DEF("evalScript", 1, js_evalScript ),
     JS_CFUNC_DEF("loadScript", 1, js_loadScript ),
+#endif
     JS_CFUNC_DEF("getenv", 1, js_std_getenv ),
     JS_CFUNC_DEF("setenv", 1, js_std_setenv ),
     JS_CFUNC_DEF("unsetenv", 1, js_std_unsetenv ),
@@ -1649,7 +1666,9 @@ static const JSCFunctionListEntry js_std_funcs[] = {
     JS_CFUNC_DEF("urlGet", 1, js_std_urlGet ),
     JS_CFUNC_DEF("loadFile", 1, js_std_loadFile ),
     JS_CFUNC_DEF("strerror", 1, js_std_strerror ),
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     JS_CFUNC_DEF("parseExtJSON", 1, js_std_parseExtJSON ),
+#endif
 
     /* FILE I/O */
     JS_CFUNC_DEF("open", 2, js_std_open ),
@@ -3578,6 +3597,7 @@ static JSClassDef js_worker_class = {
     .gc_mark = js_worker_mark,
 };
 
+#if !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
 static void *worker_func(void *opaque)
 {
     WorkerFuncArgs *args = opaque;
@@ -3865,6 +3885,7 @@ static const JSCFunctionListEntry js_worker_proto_funcs[] = {
     JS_CFUNC_DEF("postMessage", 1, js_worker_postMessage ),
     JS_CGETSET_DEF("onmessage", js_worker_get_onmessage, js_worker_set_onmessage ),
 };
+#endif /* !CONFIG_BYTECODE_ONLY_RUNTIME */
 
 #endif /* USE_WORKER */
 
@@ -3976,7 +3997,7 @@ static int js_os_init(JSContext *ctx, JSModuleDef *m)
 {
     os_poll_func = js_os_poll;
 
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
         JSThreadState *ts = JS_GetRuntimeOpaque(rt);
@@ -4015,7 +4036,7 @@ JSModuleDef *js_init_module_os(JSContext *ctx, const char *module_name)
     if (!m)
         return NULL;
     JS_AddModuleExportList(ctx, m, js_os_funcs, countof(js_os_funcs));
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
     JS_AddModuleExport(ctx, m, "Worker");
 #endif
     return m;
@@ -4087,8 +4108,10 @@ void js_std_add_helpers(JSContext *ctx, int argc, char **argv)
 
     JS_SetPropertyStr(ctx, global_obj, "print",
                       JS_NewCFunction(ctx, js_print, "print", 1));
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     JS_SetPropertyStr(ctx, global_obj, "__loadScript",
                       JS_NewCFunction(ctx, js_loadScript, "__loadScript", 1));
+#endif
 
     JS_FreeValue(ctx, global_obj);
 }
@@ -4359,4 +4382,3 @@ void js_std_eval_binary_json_module(JSContext *ctx,
         exit(1);
     }
 }
-

@@ -59,6 +59,7 @@ TEST262_COMMIT?=5c8206929d81b2d3d727ca6aac56c18358c8d790
 TEST262_SINCE?=2025-09-01
 
 OBJDIR=.obj
+OBJDIR_RT=.obj-rt
 
 ifdef CONFIG_ASAN
 OBJDIR:=$(OBJDIR)/asan
@@ -244,6 +245,8 @@ endif
 all: $(OBJDIR) $(OBJDIR)/quickjs.check.o $(OBJDIR)/qjs.check.o $(PROGS)
 
 QJS_LIB_OBJS=$(OBJDIR)/quickjs.o $(OBJDIR)/dtoa.o $(OBJDIR)/libregexp.o $(OBJDIR)/libunicode.o $(OBJDIR)/cutils.o $(OBJDIR)/quickjs-libc.o
+QJS_BYTECODE_OBJS=$(OBJDIR_RT)/quickjs.bytecode.o $(OBJDIR_RT)/dtoa.bytecode.o $(OBJDIR_RT)/libregexp.bytecode.o $(OBJDIR_RT)/libunicode.bytecode.o $(OBJDIR_RT)/cutils.bytecode.o $(OBJDIR_RT)/quickjs-libc.bytecode.o
+QJS_BYTECODE_LTO_OBJS=$(OBJDIR_RT)/quickjs.bytecode.lto.o $(OBJDIR_RT)/dtoa.bytecode.lto.o $(OBJDIR_RT)/libregexp.bytecode.lto.o $(OBJDIR_RT)/libunicode.bytecode.lto.o $(OBJDIR_RT)/cutils.bytecode.lto.o $(OBJDIR_RT)/quickjs-libc.bytecode.lto.o
 
 QJS_OBJS=$(OBJDIR)/qjs.o $(OBJDIR)/repl.o $(QJS_LIB_OBJS)
 
@@ -256,6 +259,9 @@ LIBS+=$(EXTRA_LIBS)
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR) $(OBJDIR)/examples $(OBJDIR)/tests
+
+$(OBJDIR_RT):
+	mkdir -p $(OBJDIR_RT)
 
 qjs$(EXE): $(QJS_OBJS)
 	$(CC) $(LDFLAGS) $(LDEXPORT) -o $@ $^ $(LIBS)
@@ -303,8 +309,17 @@ endif
 libquickjs$(LTOEXT).a: $(QJS_LIB_OBJS)
 	$(AR) rcs $@ $^
 
+libquickjs-bytecode$(LTOEXT).a: $(QJS_BYTECODE_LTO_OBJS)
+	$(AR) rcs $@ $^
+
 ifdef CONFIG_LTO
 libquickjs.a: $(patsubst %.o, %.nolto.o, $(QJS_LIB_OBJS))
+	$(AR) rcs $@ $^
+
+libquickjs-bytecode.a: $(QJS_BYTECODE_OBJS)
+	$(AR) rcs $@ $^
+else
+libquickjs-bytecode.a: $(QJS_BYTECODE_LTO_OBJS)
 	$(AR) rcs $@ $^
 endif # CONFIG_LTO
 
@@ -344,6 +359,12 @@ $(OBJDIR)/%.pic.o: %.c | $(OBJDIR)
 $(OBJDIR)/%.nolto.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_NOLTO) -c -o $@ $<
 
+$(OBJDIR_RT)/%.bytecode.o: %.c | $(OBJDIR_RT)
+	$(CC) $(CFLAGS_NOLTO) -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
+
+$(OBJDIR_RT)/%.bytecode.lto.o: %.c | $(OBJDIR_RT)
+	$(CC) $(CFLAGS_OPT) -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
+
 $(OBJDIR)/%.debug.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_DEBUG) -c -o $@ $<
 
@@ -364,7 +385,7 @@ clean:
 	rm -f *.a *.o *.d *~ unicode_gen regexp_test fuzz_eval fuzz_compile fuzz_regexp $(PROGS)
 	rm -f hello.c test_fib.c
 	rm -f examples/*.so tests/*.so
-	rm -rf $(OBJDIR)/ *.dSYM/ qjs-debug$(EXE)
+	rm -rf $(OBJDIR)/ $(OBJDIR_RT)/ *.dSYM/ qjs-debug$(EXE)
 	rm -rf run-test262-debug$(EXE)
 	rm -f run_octane run_sunspider_like
 
@@ -461,6 +482,24 @@ ifdef CONFIG_SHARED_LIBS
 	$(WINE) ./qjs$(EXE) tests/test_bjson.js
 	$(WINE) ./qjs$(EXE) examples/test_point.js
 endif
+
+test-bytecode-runtime: qjs$(EXE) qjsc$(EXE) libquickjs-bytecode$(LTOEXT).a
+	$(QJSC) -v -m -fno-eval -fno-regexp -fno-json -fno-module-loader -o $(OBJDIR_RT)/test-bytecode-rt tests/test_bytecode_runtime.js > $(OBJDIR_RT)/test-bytecode-link.log 2>&1
+	grep 'libquickjs-bytecode$(LTOEXT).a' $(OBJDIR_RT)/test-bytecode-link.log
+	$(QJSC) -v -m -fno-eval -fno-regexp -fno-json -o $(OBJDIR_RT)/test-standard-rt tests/test_bytecode_runtime.js > $(OBJDIR_RT)/test-standard-link.log 2>&1
+	grep 'libquickjs$(LTOEXT).a' $(OBJDIR_RT)/test-standard-link.log
+	$(QJSC) -m -fno-eval -fno-regexp -fno-json -fno-module-loader -o $(OBJDIR_RT)/test-bytecode-restrictions tests/test_bytecode_runtime_restrictions.js
+	$(QJSC) -c -m -N test_bytecode_corrupt_bc -o $(OBJDIR_RT)/test-bytecode-corrupt-bc.c tests/test_bytecode_runtime.js
+	$(CC) $(LDFLAGS) -I. -o $(OBJDIR_RT)/test-bytecode-corrupt tests/test_bytecode_corrupt.c $(OBJDIR_RT)/test-bytecode-corrupt-bc.c libquickjs-bytecode$(LTOEXT).a $(LIBS)
+	nm libquickjs$(LTOEXT).a | grep '__JS_EvalInternal$$'
+	nm libquickjs$(LTOEXT).a | grep 'JS_AddIntrinsicEval$$'
+	! nm $(OBJDIR_RT)/test-bytecode-rt | grep -E ' [Tt] _?(__JS_EvalInternal|js_parse_|js_compile_|js_evalScript|js_loadScript|js_std_parseExtJSON|js_worker_ctor)'
+	./qjs$(EXE) -m tests/test_bytecode_runtime.js > $(OBJDIR_RT)/test-bytecode-full.out
+	$(OBJDIR_RT)/test-bytecode-rt > $(OBJDIR_RT)/test-bytecode-runtime.out
+	$(OBJDIR_RT)/test-bytecode-restrictions > $(OBJDIR_RT)/test-bytecode-restrictions.out
+	grep 'restrictions=ok' $(OBJDIR_RT)/test-bytecode-restrictions.out
+	$(OBJDIR_RT)/test-bytecode-corrupt
+	cmp -s $(OBJDIR_RT)/test-bytecode-full.out $(OBJDIR_RT)/test-bytecode-runtime.out
 
 stats: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) -qd
