@@ -36599,7 +36599,12 @@ static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
 
 JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "eval is not supported");
+#else
     return JS_EvalFunctionInternal(ctx, fun_obj, ctx->global_obj, NULL, NULL);
+
+#endif
 }
 
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
@@ -36607,6 +36612,9 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
                                  const char *filename, int flags, int scope_idx)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "eval is not supported");
+#else
     JSParseState s1, *s = &s1;
     int err, js_mode, eval_type;
     JSValue fun_obj, ret_val;
@@ -36716,6 +36724,8 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     if (m)
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
     return JS_EXCEPTION;
+
+#endif
 }
 
 /* the indirection is needed to make 'eval' optional */
@@ -40473,6 +40483,9 @@ static JSValue js_function_proto(JSContext *ctx, JSValueConst this_val,
 static JSValue js_function_constructor(JSContext *ctx, JSValueConst new_target,
                                        int argc, JSValueConst *argv, int magic)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "Function constructor is not supported");
+#else
     JSFunctionKindEnum func_kind = magic;
     int i, n, ret;
     JSValue s, proto, obj = JS_UNDEFINED;
@@ -40538,6 +40551,8 @@ static JSValue js_function_constructor(JSContext *ctx, JSValueConst new_target,
  fail1:
     JS_FreeValue(ctx, obj);
     return JS_EXCEPTION;
+
+#endif
 }
 
 static __exception int js_get_length32(JSContext *ctx, uint32_t *pres,
@@ -46873,6 +46888,9 @@ static void js_regexp_finalizer(JSRuntime *rt, JSValue val)
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "RegExp compilation is not supported");
+#else
     const char *str;
     int re_flags, mask;
     uint8_t *re_bytecode_buf;
@@ -46946,6 +46964,8 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     ret = js_new_string8_len(ctx, (const char *)re_bytecode_buf, re_bytecode_len);
     js_free(ctx, re_bytecode_buf);
     return ret;
+
+#endif
 }
 
 /* fast regexp creation */
@@ -48566,7 +48586,10 @@ static const JSCFunctionListEntry js_regexp_string_iterator_proto_funcs[] = {
 
 void JS_AddIntrinsicRegExpCompiler(JSContext *ctx)
 {
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     ctx->compile_regexp = js_compile_regexp;
+
+#endif
 }
 
 int JS_AddIntrinsicRegExp(JSContext *ctx)
@@ -48976,6 +48999,9 @@ static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
 JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
                       const char *filename, int flags, JSONParseRecord *pr)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "JSON.parse is not supported");
+#else
     JSParseState s1, *s = &s1;
     JSValue val = JS_UNDEFINED;
 
@@ -48997,6 +49023,8 @@ JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
     JS_FreeValue(ctx, val);
     free_token(s, &s->token);
     return JS_EXCEPTION;
+
+#endif
 }
 
 JSValue JS_ParseJSON2(JSContext *ctx, const char *buf, size_t buf_len,
@@ -55479,8 +55507,11 @@ int JS_AddIntrinsicDate(JSContext *ctx)
 
 int JS_AddIntrinsicEval(JSContext *ctx)
 {
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     ctx->eval_internal = __JS_EvalInternal;
     return 0;
+
+#endif
 }
 
 /* BigInt */

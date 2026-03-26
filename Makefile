@@ -216,9 +216,9 @@ else
 QJSC_CC=$(CC)
 QJSC=./qjsc$(EXE)
 endif
-PROGS+=libquickjs.a
+PROGS+=libquickjs.a libquickjs-bytecode.a
 ifdef CONFIG_LTO
-PROGS+=libquickjs.lto.a
+PROGS+=libquickjs.lto.a libquickjs-bytecode.lto.a
 endif
 
 # examples
@@ -308,6 +308,12 @@ libquickjs.a: $(patsubst %.o, %.nolto.o, $(QJS_LIB_OBJS))
 	$(AR) rcs $@ $^
 endif # CONFIG_LTO
 
+libquickjs-bytecode.a: $(patsubst %.o, %.bytecode.nolto.o, $(QJS_LIB_OBJS))
+	$(AR) rcs $@ $^
+
+libquickjs-bytecode.lto.a: $(patsubst %.o, %.bytecode.o, $(QJS_LIB_OBJS))
+	$(AR) rcs $@ $^
+
 libquickjs.fuzz.a: $(patsubst %.o, %.fuzz.o, $(QJS_LIB_OBJS))
 	$(AR) rcs $@ $^
 
@@ -344,6 +350,12 @@ $(OBJDIR)/%.pic.o: %.c | $(OBJDIR)
 $(OBJDIR)/%.nolto.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_NOLTO) -c -o $@ $<
 
+$(OBJDIR)/%.bytecode.o: %.c | $(OBJDIR)
+	$(CC) $(CFLAGS_OPT) -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
+
+$(OBJDIR)/%.bytecode.nolto.o: %.c | $(OBJDIR)
+	$(CC) $(CFLAGS_NOLTO) -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
+
 $(OBJDIR)/%.debug.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_DEBUG) -c -o $@ $<
 
@@ -373,9 +385,9 @@ install: all
 	$(STRIP) qjs$(EXE) qjsc$(EXE)
 	install -m755 qjs$(EXE) qjsc$(EXE) "$(DESTDIR)$(PREFIX)/bin"
 	mkdir -p "$(DESTDIR)$(PREFIX)/lib/quickjs"
-	install -m644 libquickjs.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
+	install -m644 libquickjs.a libquickjs-bytecode.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
 ifdef CONFIG_LTO
-	install -m644 libquickjs.lto.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
+	install -m644 libquickjs.lto.a libquickjs-bytecode.lto.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
 endif
 	mkdir -p "$(DESTDIR)$(PREFIX)/include/quickjs"
 	install -m644 quickjs.h quickjs-libc.h "$(DESTDIR)$(PREFIX)/include/quickjs"
