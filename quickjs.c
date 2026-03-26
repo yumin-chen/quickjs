@@ -36607,6 +36607,9 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
                                  const char *filename, int flags, int scope_idx)
 {
+#ifdef JS_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "eval() and source compilation are disabled");
+#else
     JSParseState s1, *s = &s1;
     int err, js_mode, eval_type;
     JSValue fun_obj, ret_val;
@@ -36711,6 +36714,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
         ret_val = JS_EvalFunctionInternal(ctx, fun_obj, this_obj, var_refs, sf);
     }
     return ret_val;
+#endif
  fail1:
     /* XXX: should free all the unresolved dependencies */
     if (m)
@@ -40470,9 +40474,18 @@ static JSValue js_function_proto(JSContext *ctx, JSValueConst this_val,
 }
 
 /* XXX: add a specific eval mode so that Function("}), ({") is rejected */
+static JSValue js_function_constructor_disabled(JSContext *ctx, JSValueConst new_target,
+                                                int argc, JSValueConst *argv, int magic)
+{
+    return JS_ThrowTypeError(ctx, "Function constructor is disabled");
+}
+
 static JSValue js_function_constructor(JSContext *ctx, JSValueConst new_target,
                                        int argc, JSValueConst *argv, int magic)
 {
+#ifdef JS_BYTECODE_ONLY_RUNTIME
+    return js_function_constructor_disabled(ctx, new_target, argc, argv, magic);
+#else
     JSFunctionKindEnum func_kind = magic;
     int i, n, ret;
     JSValue s, proto, obj = JS_UNDEFINED;
@@ -40538,6 +40551,7 @@ static JSValue js_function_constructor(JSContext *ctx, JSValueConst new_target,
  fail1:
     JS_FreeValue(ctx, obj);
     return JS_EXCEPTION;
+#endif
 }
 
 static __exception int js_get_length32(JSContext *ctx, uint32_t *pres,
@@ -46873,6 +46887,9 @@ static void js_regexp_finalizer(JSRuntime *rt, JSValue val)
 static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
                                  JSValueConst flags)
 {
+#ifdef JS_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "RegExp compilation from source is disabled");
+#else
     const char *str;
     int re_flags, mask;
     uint8_t *re_bytecode_buf;
@@ -46946,6 +46963,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     ret = js_new_string8_len(ctx, (const char *)re_bytecode_buf, re_bytecode_len);
     js_free(ctx, re_bytecode_buf);
     return ret;
+#endif
 }
 
 /* fast regexp creation */
@@ -48566,7 +48584,9 @@ static const JSCFunctionListEntry js_regexp_string_iterator_proto_funcs[] = {
 
 void JS_AddIntrinsicRegExpCompiler(JSContext *ctx)
 {
+#ifndef JS_BYTECODE_ONLY_RUNTIME
     ctx->compile_regexp = js_compile_regexp;
+#endif
 }
 
 int JS_AddIntrinsicRegExp(JSContext *ctx)
@@ -48976,6 +48996,9 @@ static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
 JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
                       const char *filename, int flags, JSONParseRecord *pr)
 {
+#ifdef JS_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "JSON.parse is disabled");
+#else
     JSParseState s1, *s = &s1;
     JSValue val = JS_UNDEFINED;
 
@@ -48993,6 +49016,7 @@ JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
         }
     }
     return val;
+#endif
  fail:
     JS_FreeValue(ctx, val);
     free_token(s, &s->token);
@@ -49697,7 +49721,9 @@ static JSValue js_json_stringify(JSContext *ctx, JSValueConst this_val,
 
 static const JSCFunctionListEntry js_json_funcs[] = {
     JS_CFUNC_DEF("isRawJSON", 1, js_json_isRawJSON ),
+#ifndef JS_BYTECODE_ONLY_RUNTIME
     JS_CFUNC_DEF("parse", 2, js_json_parse ),
+#endif
     JS_CFUNC_DEF("rawJSON", 1, js_json_rawJSON ),
     JS_CFUNC_DEF("stringify", 3, js_json_stringify ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "JSON", JS_PROP_CONFIGURABLE ),
@@ -53939,7 +53965,7 @@ static JSClassShortDef const js_async_class_def[] = {
     { JS_ATOM_AsyncGenerator, js_async_generator_finalizer, js_async_generator_mark },  /* JS_CLASS_ASYNC_GENERATOR */
 };
 
-int JS_AddIntrinsicPromise(JSContext *ctx)
+static int JS_AddIntrinsicPromiseInternal(JSContext *ctx, JS_BOOL is_bytecode_only)
 {
     JSRuntime *rt = ctx->rt;
     JSValue obj1;
@@ -53969,7 +53995,10 @@ int JS_AddIntrinsicPromise(JSContext *ctx)
     ctx->promise_ctor = obj1;
     
     /* AsyncFunction */
-    ft.generic_magic = js_function_constructor;
+    if (is_bytecode_only)
+        ft.generic_magic = js_function_constructor_disabled;
+    else
+        ft.generic_magic = js_function_constructor;
     obj1 = JS_NewCConstructor(ctx, JS_CLASS_ASYNC_FUNCTION, "AsyncFunction",
                                      ft.generic, 1, JS_CFUNC_constructor_or_func_magic, JS_FUNC_ASYNC,
                                      ctx->function_ctor,
@@ -54005,7 +54034,10 @@ int JS_AddIntrinsicPromise(JSContext *ctx)
         return -1;
 
     /* AsyncGeneratorFunction */
-    ft.generic_magic = js_function_constructor;
+    if (is_bytecode_only)
+        ft.generic_magic = js_function_constructor_disabled;
+    else
+        ft.generic_magic = js_function_constructor;
     obj1 = JS_NewCConstructor(ctx, JS_CLASS_ASYNC_GENERATOR_FUNCTION, "AsyncGeneratorFunction",
                                      ft.generic, 1, JS_CFUNC_constructor_or_func_magic, JS_FUNC_ASYNC_GENERATOR,
                                      ctx->function_ctor,
@@ -54019,6 +54051,16 @@ int JS_AddIntrinsicPromise(JSContext *ctx)
     return JS_SetConstructor2(ctx, ctx->class_proto[JS_CLASS_ASYNC_GENERATOR_FUNCTION],
                               ctx->class_proto[JS_CLASS_ASYNC_GENERATOR],
                               JS_PROP_CONFIGURABLE, JS_PROP_CONFIGURABLE);
+}
+
+int JS_AddIntrinsicPromise(JSContext *ctx)
+{
+    return JS_AddIntrinsicPromiseInternal(ctx, FALSE);
+}
+
+int JS_AddIntrinsicPromiseBytecode(JSContext *ctx)
+{
+    return JS_AddIntrinsicPromiseInternal(ctx, TRUE);
 }
 
 /* URI handling */
@@ -55479,7 +55521,9 @@ int JS_AddIntrinsicDate(JSContext *ctx)
 
 int JS_AddIntrinsicEval(JSContext *ctx)
 {
+#ifndef JS_BYTECODE_ONLY_RUNTIME
     ctx->eval_internal = __JS_EvalInternal;
+#endif
     return 0;
 }
 
