@@ -59,6 +59,7 @@ TEST262_COMMIT?=5c8206929d81b2d3d727ca6aac56c18358c8d790
 TEST262_SINCE?=2025-09-01
 
 OBJDIR=.obj
+OBJDIR_RT=.obj-rt
 
 ifdef CONFIG_ASAN
 OBJDIR:=$(OBJDIR)/asan
@@ -257,6 +258,10 @@ LIBS+=$(EXTRA_LIBS)
 $(OBJDIR):
 	mkdir -p $(OBJDIR) $(OBJDIR)/examples $(OBJDIR)/tests
 
+$(OBJDIR_RT):
+	mkdir -p $(OBJDIR_RT)
+	mkdir -p $(OBJDIR_RT)/examples $(OBJDIR_RT)/tests
+
 qjs$(EXE): $(QJS_OBJS)
 	$(CC) $(LDFLAGS) $(LDEXPORT) -o $@ $^ $(LIBS)
 
@@ -311,6 +316,15 @@ endif # CONFIG_LTO
 libquickjs.fuzz.a: $(patsubst %.o, %.fuzz.o, $(QJS_LIB_OBJS))
 	$(AR) rcs $@ $^
 
+QJS_BYTECODE_OBJS=$(patsubst $(OBJDIR)/%.o, $(OBJDIR_RT)/%.bytecode.o, $(QJS_LIB_OBJS))
+QJS_BYTECODE_LTO_OBJS=$(patsubst $(OBJDIR)/%.o, $(OBJDIR_RT)/%.bytecode.lto.o, $(QJS_LIB_OBJS))
+
+libquickjs-bytecode.a: $(QJS_BYTECODE_OBJS)
+	$(AR) rcs $@ $^
+
+libquickjs-bytecode.lto.a: $(QJS_BYTECODE_LTO_OBJS)
+	$(AR) rcs $@ $^
+
 repl.c: $(QJSC) repl.js
 	$(QJSC) -s -c -o $@ -m repl.js
 
@@ -353,6 +367,12 @@ $(OBJDIR)/%.fuzz.o: %.c | $(OBJDIR)
 $(OBJDIR)/%.check.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -DCONFIG_CHECK_JSVALUE -c -o $@ $<
 
+$(OBJDIR_RT)/%.bytecode.o: %.c | $(OBJDIR_RT)
+	$(CC) $(CFLAGS_NOLTO) -DCONFIG_BYTECODE_ONLY_RUNTIME -MMD -MF $(OBJDIR_RT)/$(@F).d -c -o $@ $<
+
+$(OBJDIR_RT)/%.bytecode.lto.o: %.c | $(OBJDIR_RT)
+	$(CC) $(CFLAGS_OPT) -DCONFIG_BYTECODE_ONLY_RUNTIME -MMD -MF $(OBJDIR_RT)/$(@F).d -c -o $@ $<
+
 regexp_test: libregexp.c libunicode.c cutils.c
 	$(CC) $(LDFLAGS) $(CFLAGS) -DTEST -o $@ libregexp.c libunicode.c cutils.c $(LIBS)
 
@@ -374,8 +394,10 @@ install: all
 	install -m755 qjs$(EXE) qjsc$(EXE) "$(DESTDIR)$(PREFIX)/bin"
 	mkdir -p "$(DESTDIR)$(PREFIX)/lib/quickjs"
 	install -m644 libquickjs.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
+	install -m644 libquickjs-bytecode.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
 ifdef CONFIG_LTO
 	install -m644 libquickjs.lto.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
+	install -m644 libquickjs-bytecode.lto.a "$(DESTDIR)$(PREFIX)/lib/quickjs"
 endif
 	mkdir -p "$(DESTDIR)$(PREFIX)/include/quickjs"
 	install -m644 quickjs.h quickjs-libc.h "$(DESTDIR)$(PREFIX)/include/quickjs"
@@ -510,6 +532,18 @@ endif
 testall: all test microbench test2o test2
 
 testall-complete: testall
+
+test-bytecode-runtime: libquickjs-bytecode.lto.a qjsc$(EXE) qjs$(EXE)
+	$(QJSC) -fno-eval -fno-regexp -fno-json -fno-module-loader \
+	        -o /tmp/test-bytecode-rt tests/test_bytecode_runtime.js
+	@nm /tmp/test-bytecode-rt | grep -E ' T (__JS_EvalInternal|js_parse_|js_compile_|js_evalScript|js_loadScript|js_std_parseExtJSON|js_worker_ctor)' \
+	    && (echo "FAIL: forbidden symbols found in bytecode-only binary" && exit 1) \
+	    || echo "PASS: no forbidden symbols"
+	@/tmp/test-bytecode-rt > /tmp/test-bytecode-rt.out
+	@./qjs$(EXE) tests/test_bytecode_runtime.js > /tmp/test-bytecode-rt.expected
+	@diff /tmp/test-bytecode-rt.out /tmp/test-bytecode-rt.expected \
+	    && echo "PASS: bytecode round-trip equivalence" \
+	    || (echo "FAIL: bytecode round-trip equivalence" && exit 1)
 
 node-test:
 	node tests/test_closure.js

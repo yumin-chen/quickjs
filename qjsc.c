@@ -21,6 +21,10 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+#error "qjsc must be built with the full QuickJS engine"
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -78,6 +82,15 @@ static const FeatureEntry feature_list[] = {
     { "module-loader", NULL },
     { "weakref", "WeakRef" },
 };
+
+#define FE_MASK(i) ((uint64_t)1 << (i))
+#define BYTECODE_ONLY_TRIGGER_MASK \
+    (FE_MASK(1) | FE_MASK(3) | FE_MASK(4) | FE_MASK(FE_MODULE_LOADER))
+
+static BOOL runtime_needs_parser(void)
+{
+    return (feature_bitmap & BYTECODE_ONLY_TRIGGER_MASK) != 0;
+}
 
 void namelist_add(namelist_t *lp, const char *name, const char *short_name,
                   int flags)
@@ -476,7 +489,10 @@ static int output_executable(const char *out_filename, const char *cfilename,
     }
 
     lto_suffix = "";
-    bn_suffix = "";
+    if (runtime_needs_parser())
+        bn_suffix = "";
+    else
+        bn_suffix = "-bytecode";
 
     arg = argv;
     *arg++ = CONFIG_CC;
