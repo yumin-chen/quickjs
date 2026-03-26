@@ -469,7 +469,7 @@ endif
 test-bytecode-runtime: libquickjs-bytecode.a libquickjs-bytecode.lto.a qjsc$(EXE)
 	$(QJSC) -flto -fno-eval -fno-regexp -fno-json -fno-module-loader \
 	        -o tests/test-bytecode-rt tests/test_bytecode_runtime.js
-	@nm tests/test-bytecode-rt | grep -E ' [Tt] (__JS_EvalInternal|js_parse_|js_compile_)' \
+	@nm tests/test-bytecode-rt | grep -E ' [Tt] (__JS_EvalInternal|js_parse_|js_compile_|js_evalScript|js_loadScript|js_std_parseExtJSON|js_worker_ctor)' \
 	    && (echo "FAIL: parser symbols found in bytecode-only binary" && exit 1) \
 	    || echo "PASS: no parser symbols"
 	@tests/test-bytecode-rt
