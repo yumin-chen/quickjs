@@ -26,12 +26,6 @@ static JSContext *JS_NewCustomContext(JSRuntime *rt)
   if (!ctx)
     return NULL;
   JS_AddIntrinsicBaseObjects(ctx);
-  JS_AddIntrinsicDate(ctx);
-  JS_AddIntrinsicStringNormalize(ctx);
-  JS_AddIntrinsicProxy(ctx);
-  JS_AddIntrinsicMapSet(ctx);
-  JS_AddIntrinsicTypedArrays(ctx);
-  JS_AddIntrinsicPromise(ctx);
   JS_AddIntrinsicWeakRef(ctx);
   return ctx;
 }

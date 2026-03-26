@@ -482,11 +482,15 @@ test-bytecode-runtime: qjsc$(EXE) libquickjs-bytecode.lto.a
 	./qjsc -e $(HELLO_OPTS) -o hello_bytecode.c examples/hello.js
 	$(CC) $(CFLAGS_OPT) -flto -o hello_bytecode hello_bytecode.c libquickjs-bytecode.lto.a $(LIBS)
 	./hello_bytecode | grep "Hello World"
+	./qjsc -e $(HELLO_OPTS) -o test_bytecode_runtime.c tests/test_bytecode_runtime.js
+	$(CC) $(CFLAGS_OPT) -flto -o test_bytecode_runtime test_bytecode_runtime.c libquickjs-bytecode.lto.a $(LIBS)
+	./test_bytecode_runtime
 	@if nm hello_bytecode | grep -E "__JS_EvalInternal|js_parse_error|JS_ParseJSON2|js_compile_regexp|JS_LoadModule"; then \
 		echo "Error: forbidden symbols found in hello_bytecode"; \
 		exit 1; \
 	fi
 	@echo "Bytecode-only runtime test passed"
+	rm -f hello_bytecode hello_bytecode.c test_bytecode_runtime test_bytecode_runtime.c
 
 microbench: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) --std tests/microbench.js
