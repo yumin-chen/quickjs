@@ -36,6 +36,10 @@
 #include "cutils.h"
 #include "quickjs-libc.h"
 
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+#error "qjsc must be built with the full QuickJS engine"
+#endif
+
 typedef struct {
     char *name;
     char *short_name;
@@ -79,9 +83,13 @@ static const FeatureEntry feature_list[] = {
     { "weakref", "WeakRef" },
 };
 
+#define FE_MASK(i) ((uint64_t)1 << (i))
+#define BYTECODE_ONLY_TRIGGER_MASK \
+    (FE_MASK(1) | FE_MASK(3) | FE_MASK(4) | FE_MASK(FE_MODULE_LOADER))
+
 static BOOL runtime_needs_parser(void)
 {
-    return (feature_bitmap & ((1 << 1) | (1 << 3) | (1 << 4) | (1 << FE_MODULE_LOADER))) != 0;
+    return (feature_bitmap & BYTECODE_ONLY_TRIGGER_MASK) != 0;
 }
 
 void namelist_add(namelist_t *lp, const char *name, const char *short_name,
