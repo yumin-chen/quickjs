@@ -402,6 +402,8 @@ HELLO_OPTS=-fno-string-normalize -fno-map -fno-promise -fno-typedarray \
            -fno-typedarray -fno-regexp -fno-json -fno-eval -fno-proxy \
            -fno-date -fno-module-loader
 
+BYTECODE_RUNTIME_OPTS=-fno-eval -fno-regexp -fno-json -fno-module-loader
+
 hello.c: $(QJSC) $(HELLO_SRCS)
 	$(QJSC) -e $(HELLO_OPTS) -o $@ $(HELLO_SRCS)
 
@@ -479,18 +481,25 @@ stats: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) -qd
 
 test-bytecode-runtime: qjsc$(EXE) libquickjs-bytecode.lto.a
-	./qjsc -e $(HELLO_OPTS) -o hello_bytecode.c examples/hello.js
+	./qjsc -e $(BYTECODE_RUNTIME_OPTS) -o hello_bytecode.c examples/hello.js
 	$(CC) $(CFLAGS_OPT) -flto -o hello_bytecode hello_bytecode.c libquickjs-bytecode.lto.a $(LIBS)
 	./hello_bytecode | grep "Hello World"
-	./qjsc -e $(HELLO_OPTS) -o test_bytecode_runtime.c tests/test_bytecode_runtime.js
+	./qjsc -e -m $(BYTECODE_RUNTIME_OPTS) -o test_bytecode_runtime.c tests/test_bytecode_runtime.js
 	$(CC) $(CFLAGS_OPT) -flto -o test_bytecode_runtime test_bytecode_runtime.c libquickjs-bytecode.lto.a $(LIBS)
 	./test_bytecode_runtime
-	@if nm hello_bytecode | grep -E "__JS_EvalInternal|js_parse_error|JS_ParseJSON2|js_compile_regexp|JS_LoadModule"; then \
+	@if nm hello_bytecode | grep -E "__JS_EvalInternal|js_parse_program|JS_ParseJSON3|js_compile_regexp|JS_LoadModule"; then \
 		echo "Error: forbidden symbols found in hello_bytecode"; \
+		nm hello_bytecode | grep -E "__JS_EvalInternal|js_parse_program|JS_ParseJSON3|js_compile_regexp|JS_LoadModule"; \
+		exit 1; \
+	fi
+	@echo "Testing corrupted bytecode rejection..."
+	echo "corrupted" > /tmp/bad.bin
+	@if ./hello_bytecode /tmp/bad.bin 2>&1 | grep -q "Segmentation fault"; then \
+		echo "Error: Bytecode-only runtime crashed on corrupted input"; \
 		exit 1; \
 	fi
 	@echo "Bytecode-only runtime test passed"
-	rm -f hello_bytecode hello_bytecode.c test_bytecode_runtime test_bytecode_runtime.c
+	rm -f hello_bytecode hello_bytecode.c test_bytecode_runtime test_bytecode_runtime.c /tmp/bad.bin
 
 microbench: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) --std tests/microbench.js
