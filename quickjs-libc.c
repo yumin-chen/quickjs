@@ -679,11 +679,16 @@ JSModuleDef *js_module_loader(JSContext *ctx,
                               JSValueConst attributes)
 {
     JSModuleDef *m;
-    int res;
     
     if (has_suffix(module_name, ".so")) {
         m = js_module_loader_so(ctx, module_name);
     } else {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+        JS_ThrowTypeError(ctx, "could not load module filename '%s': source module loading is not supported",
+                          module_name);
+        return NULL;
+#else
+        int res;
         size_t buf_len;
         uint8_t *buf;
 
@@ -723,6 +728,7 @@ JSModuleDef *js_module_loader(JSContext *ctx,
             m = JS_VALUE_GET_PTR(func_val);
             JS_FreeValue(ctx, func_val);
         }
+#endif
     }
     return m;
 }
@@ -3610,7 +3616,7 @@ static void *worker_func(void *opaque)
 
     JS_SetCanBlock(rt, TRUE);
 
-    js_std_add_helpers(ctx, -1, NULL);
+    js_std_add_helpers(ctx, -1, NULL, TRUE);
 
     val = JS_LoadModule(ctx, args->basename, args->filename);
     free(args->filename);
@@ -4058,13 +4064,17 @@ static JSValue js_console_log(JSContext *ctx, JSValueConst this_val,
     return ret;
 }
 
-void js_std_add_helpers(JSContext *ctx, int argc, char **argv)
+void js_std_add_helpers(JSContext *ctx, int argc, char **argv, int use_module_loader)
 {
     JSValue global_obj, console, args, performance;
     int i;
 
     /* XXX: should these global definitions be enumerable? */
     global_obj = JS_GetGlobalObject(ctx);
+
+    if (use_module_loader) {
+        JS_SetModuleLoaderFunc2(JS_GetRuntime(ctx), NULL, js_module_loader, js_module_check_attributes, NULL);
+    }
 
     console = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, console, "log",

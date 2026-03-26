@@ -216,9 +216,9 @@ else
 QJSC_CC=$(CC)
 QJSC=./qjsc$(EXE)
 endif
-PROGS+=libquickjs.a
+PROGS+=libquickjs.a libquickjs-bytecode.a
 ifdef CONFIG_LTO
-PROGS+=libquickjs.lto.a
+PROGS+=libquickjs.lto.a libquickjs-bytecode.lto.a
 endif
 
 # examples
@@ -244,6 +244,7 @@ endif
 all: $(OBJDIR) $(OBJDIR)/quickjs.check.o $(OBJDIR)/qjs.check.o $(PROGS)
 
 QJS_LIB_OBJS=$(OBJDIR)/quickjs.o $(OBJDIR)/dtoa.o $(OBJDIR)/libregexp.o $(OBJDIR)/libunicode.o $(OBJDIR)/cutils.o $(OBJDIR)/quickjs-libc.o
+QJS_LIB_BYTECODE_OBJS=$(patsubst $(OBJDIR)/%.o, $(OBJDIR)/%.bytecode.o, $(QJS_LIB_OBJS))
 
 QJS_OBJS=$(OBJDIR)/qjs.o $(OBJDIR)/repl.o $(QJS_LIB_OBJS)
 
@@ -303,8 +304,14 @@ endif
 libquickjs$(LTOEXT).a: $(QJS_LIB_OBJS)
 	$(AR) rcs $@ $^
 
+libquickjs-bytecode$(LTOEXT).a: $(QJS_LIB_BYTECODE_OBJS)
+	$(AR) rcs $@ $^
+
 ifdef CONFIG_LTO
 libquickjs.a: $(patsubst %.o, %.nolto.o, $(QJS_LIB_OBJS))
+	$(AR) rcs $@ $^
+
+libquickjs-bytecode.a: $(patsubst %.o, %.bytecode.nolto.o, $(QJS_LIB_OBJS))
 	$(AR) rcs $@ $^
 endif # CONFIG_LTO
 
@@ -343,6 +350,12 @@ $(OBJDIR)/%.pic.o: %.c | $(OBJDIR)
 
 $(OBJDIR)/%.nolto.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_NOLTO) -c -o $@ $<
+
+$(OBJDIR)/%.bytecode.o: %.c | $(OBJDIR)
+	$(CC) $(CFLAGS_OPT) -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
+
+$(OBJDIR)/%.bytecode.nolto.o: %.c | $(OBJDIR)
+	$(CC) $(CFLAGS_NOLTO) -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
 
 $(OBJDIR)/%.debug.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_DEBUG) -c -o $@ $<
@@ -464,6 +477,16 @@ endif
 
 stats: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) -qd
+
+test-bytecode-runtime: qjsc$(EXE) libquickjs-bytecode.lto.a
+	./qjsc -e $(HELLO_OPTS) -o hello_bytecode.c examples/hello.js
+	$(CC) $(CFLAGS_OPT) -flto -o hello_bytecode hello_bytecode.c libquickjs-bytecode.lto.a $(LIBS)
+	./hello_bytecode | grep "Hello World"
+	@if nm hello_bytecode | grep -E "__JS_EvalInternal|js_parse_error|JS_ParseJSON2|js_compile_regexp|JS_LoadModule"; then \
+		echo "Error: forbidden symbols found in hello_bytecode"; \
+		exit 1; \
+	fi
+	@echo "Bytecode-only runtime test passed"
 
 microbench: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) --std tests/microbench.js

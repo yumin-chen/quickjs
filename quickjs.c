@@ -2219,6 +2219,7 @@ JSContext *JS_NewContext(JSRuntime *rt)
         JS_AddIntrinsicDate(ctx) ||
         JS_AddIntrinsicEval(ctx) ||
         JS_AddIntrinsicStringNormalize(ctx) ||
+        (JS_AddIntrinsicRegExpCompiler(ctx), 0) ||
         JS_AddIntrinsicRegExp(ctx) ||
         JS_AddIntrinsicJSON(ctx) ||
         JS_AddIntrinsicProxy(ctx) ||
@@ -36603,6 +36604,7 @@ JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
 }
 
 /* 'input' must be zero terminated i.e. input[input_len] = '\0'. */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
                                  const char *input, size_t input_len,
                                  const char *filename, int flags, int scope_idx)
@@ -36717,6 +36719,7 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_MODULE, m));
     return JS_EXCEPTION;
 }
+#endif
 
 /* the indirection is needed to make 'eval' optional */
 static JSValue JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
@@ -40509,6 +40512,11 @@ static JSValue js_function_constructor(JSContext *ctx, JSValueConst new_target,
     if (JS_IsException(s))
         goto fail1;
 
+    if (unlikely(!ctx->eval_internal)) {
+        JS_FreeValue(ctx, s);
+        JS_ThrowTypeError(ctx, "eval is not supported");
+        goto fail1;
+    }
     obj = JS_EvalObject(ctx, ctx->global_obj, s, JS_EVAL_TYPE_INDIRECT, -1);
     JS_FreeValue(ctx, s);
     if (JS_IsException(obj))
@@ -48566,14 +48574,14 @@ static const JSCFunctionListEntry js_regexp_string_iterator_proto_funcs[] = {
 
 void JS_AddIntrinsicRegExpCompiler(JSContext *ctx)
 {
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     ctx->compile_regexp = js_compile_regexp;
+#endif
 }
 
 int JS_AddIntrinsicRegExp(JSContext *ctx)
 {
     JSValue obj;
-
-    JS_AddIntrinsicRegExpCompiler(ctx);
 
     obj = JS_NewCConstructor(ctx, JS_CLASS_REGEXP, "RegExp",
                                     js_regexp_constructor, 2, JS_CFUNC_constructor_or_func, 0,
@@ -49012,6 +49020,7 @@ JSValue JS_ParseJSON(JSContext *ctx, const char *buf, size_t buf_len,
 }
 
 /* if pr != NULL, then pr->value = holder by construction */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
                                          JSAtom name, JSValueConst reviver,
                                          const char *text_str, JSONParseRecord *pr)
@@ -49116,10 +49125,14 @@ static JSValue internalize_json_property(JSContext *ctx, JSValueConst holder,
     JS_FreeValue(ctx, val);
     return JS_EXCEPTION;
 }
+#endif
 
 static JSValue js_json_parse(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+    return JS_ThrowTypeError(ctx, "JSON.parse is not supported");
+#else
     JSValue obj;
     const char *str;
     size_t len;
@@ -49168,6 +49181,7 @@ static JSValue js_json_parse(JSContext *ctx, JSValueConst this_val,
  fail:
     JS_FreeCString(ctx, str);
     return JS_EXCEPTION;
+#endif /* !CONFIG_BYTECODE_ONLY_RUNTIME */
 }
 
 static JSValue js_json_isRawJSON(JSContext *ctx, JSValueConst this_val,
@@ -55479,7 +55493,9 @@ int JS_AddIntrinsicDate(JSContext *ctx)
 
 int JS_AddIntrinsicEval(JSContext *ctx)
 {
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     ctx->eval_internal = __JS_EvalInternal;
+#endif
     return 0;
 }
 

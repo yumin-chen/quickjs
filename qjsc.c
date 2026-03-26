@@ -79,6 +79,11 @@ static const FeatureEntry feature_list[] = {
     { "weakref", "WeakRef" },
 };
 
+static BOOL runtime_needs_parser(void)
+{
+    return (feature_bitmap & ((1 << 1) | (1 << 3) | (1 << 4) | (1 << FE_MODULE_LOADER))) != 0;
+}
+
 void namelist_add(namelist_t *lp, const char *name, const char *short_name,
                   int flags)
 {
@@ -477,6 +482,8 @@ static int output_executable(const char *out_filename, const char *cfilename,
 
     lto_suffix = "";
     bn_suffix = "";
+    if (!runtime_needs_parser())
+        bn_suffix = "-bytecode";
 
     arg = argv;
     *arg++ = CONFIG_CC;
@@ -841,14 +848,10 @@ int main(int argc, char **argv)
                     (unsigned int)stack_size);
         }
 
-        /* add the module loader if necessary */
-        if (feature_bitmap & (1 << FE_MODULE_LOADER)) {
-            fprintf(fo, "  JS_SetModuleLoaderFunc2(rt, NULL, js_module_loader, js_module_check_attributes, NULL);\n");
-        }
-
         fprintf(fo,
                 "  ctx = JS_NewCustomContext(rt);\n"
-                "  js_std_add_helpers(ctx, argc, argv);\n");
+                "  js_std_add_helpers(ctx, argc, argv, %d);\n",
+                (feature_bitmap & (1 << FE_MODULE_LOADER)) != 0);
 
         for(i = 0; i < cname_list.count; i++) {
             namelist_entry_t *e = &cname_list.array[i];
