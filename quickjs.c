@@ -35440,6 +35440,7 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
 /* create a function object from a function definition. The function
    definition is freed. All the child functions are also created. It
    must be done this way to resolve all the variables. */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
 {
     JSValue func_obj;
@@ -35698,6 +35699,7 @@ static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd)
     js_free_function_def(ctx, fd);
     return JS_EXCEPTION;
 }
+#endif
 
 static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b)
 {
@@ -36494,6 +36496,7 @@ static __exception int js_parse_function_decl(JSParseState *s,
                                    JS_PARSE_EXPORT_NONE, NULL);
 }
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static __exception int js_parse_program(JSParseState *s)
 {
     JSFunctionDef *fd = s->cur_func;
@@ -36545,7 +36548,9 @@ static __exception int js_parse_program(JSParseState *s)
 
     return 0;
 }
+#endif
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static void js_parse_init(JSContext *ctx, JSParseState *s,
                           const char *input, size_t input_len,
                           const char *filename)
@@ -36563,6 +36568,7 @@ static void js_parse_init(JSContext *ctx, JSParseState *s,
     s->get_line_col_cache.line_num = 0;
     s->get_line_col_cache.col_num = 0;
 }
+#endif
 
 static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
                                        JSValueConst this_obj,
@@ -36597,7 +36603,6 @@ static JSValue JS_EvalFunctionInternal(JSContext *ctx, JSValue fun_obj,
     }
     return ret_val;
 }
-
 JSValue JS_EvalFunction(JSContext *ctx, JSValue fun_obj)
 {
     return JS_EvalFunctionInternal(ctx, fun_obj, ctx->global_obj, NULL, NULL);
@@ -48981,6 +48986,7 @@ static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
     return JS_EXCEPTION;
 }
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 JSValue JS_ParseJSON3(JSContext *ctx, const char *buf, size_t buf_len,
                       const char *filename, int flags, JSONParseRecord *pr)
 {
@@ -49018,6 +49024,7 @@ JSValue JS_ParseJSON(JSContext *ctx, const char *buf, size_t buf_len,
 {
     return JS_ParseJSON3(ctx, buf, buf_len, filename, 0, NULL);
 }
+#endif
 
 /* if pr != NULL, then pr->value = holder by construction */
 #ifndef CONFIG_BYTECODE_ONLY_RUNTIME

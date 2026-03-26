@@ -67,7 +67,7 @@ typedef sig_t sighandler_t;
 /* enable the os.Worker API. It relies on POSIX threads */
 #define USE_WORKER
 
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
 #include <pthread.h>
 #include <stdatomic.h>
 #endif
@@ -123,7 +123,7 @@ typedef struct JSWaker {
 
 typedef struct {
     int ref_count;
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
     pthread_mutex_t mutex;
 #endif
     struct list_head msg_queue; /* list of JSWorkerMessage.link */
@@ -431,6 +431,7 @@ uint8_t *js_load_file(JSContext *ctx, size_t *pbuf_len, const char *filename)
 }
 
 /* load and evaluate a file */
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_loadScript(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
@@ -454,6 +455,7 @@ static JSValue js_loadScript(JSContext *ctx, JSValueConst this_val,
     JS_FreeCString(ctx, filename);
     return ret;
 }
+#endif
 
 /* load a file as a UTF-8 encoded string */
 static JSValue js_std_loadFile(JSContext *ctx, JSValueConst this_val,
@@ -876,6 +878,7 @@ static int get_bool_option(JSContext *ctx, BOOL *pbool,
     return 0;
 }
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_evalScript(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
@@ -924,6 +927,7 @@ static JSValue js_evalScript(JSContext *ctx, JSValueConst this_val,
     }
     return ret;
 }
+#endif
 
 static JSClassID js_std_file_class_id;
 
@@ -963,6 +967,7 @@ static JSValue js_std_strerror(JSContext *ctx, JSValueConst this_val,
     return JS_NewString(ctx, strerror(err));
 }
 
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
 static JSValue js_std_parseExtJSON(JSContext *ctx, JSValueConst this_val,
                                    int argc, JSValueConst *argv)
 {
@@ -977,6 +982,7 @@ static JSValue js_std_parseExtJSON(JSContext *ctx, JSValueConst this_val,
     JS_FreeCString(ctx, str);
     return obj;
 }
+#endif
 
 static JSValue js_new_std_file(JSContext *ctx, FILE *f,
                                BOOL close_in_finalizer,
@@ -1646,8 +1652,10 @@ static const JSCFunctionListEntry js_std_error_props[] = {
 static const JSCFunctionListEntry js_std_funcs[] = {
     JS_CFUNC_DEF("exit", 1, js_std_exit ),
     JS_CFUNC_DEF("gc", 0, js_std_gc ),
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     JS_CFUNC_DEF("evalScript", 1, js_evalScript ),
     JS_CFUNC_DEF("loadScript", 1, js_loadScript ),
+#endif
     JS_CFUNC_DEF("getenv", 1, js_std_getenv ),
     JS_CFUNC_DEF("setenv", 1, js_std_setenv ),
     JS_CFUNC_DEF("unsetenv", 1, js_std_unsetenv ),
@@ -1655,7 +1663,9 @@ static const JSCFunctionListEntry js_std_funcs[] = {
     JS_CFUNC_DEF("urlGet", 1, js_std_urlGet ),
     JS_CFUNC_DEF("loadFile", 1, js_std_loadFile ),
     JS_CFUNC_DEF("strerror", 1, js_std_strerror ),
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     JS_CFUNC_DEF("parseExtJSON", 1, js_std_parseExtJSON ),
+#endif
 
     /* FILE I/O */
     JS_CFUNC_DEF("open", 2, js_std_open ),
@@ -2274,7 +2284,7 @@ static void call_handler(JSContext *ctx, JSValueConst func)
     JS_FreeValue(ctx, ret);
 }
 
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
 
 #ifdef _WIN32
 
@@ -3427,7 +3437,7 @@ static JSValue js_os_dup2(JSContext *ctx, JSValueConst this_val,
 
 #endif /* !_WIN32 */
 
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
 
 /* Worker */
 
@@ -3876,7 +3886,7 @@ static const JSCFunctionListEntry js_worker_proto_funcs[] = {
 
 void js_std_set_worker_new_context_func(JSContext *(*func)(JSRuntime *rt))
 {
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
     js_worker_new_context_func = func;
 #endif
 }
@@ -3982,7 +3992,7 @@ static int js_os_init(JSContext *ctx, JSModuleDef *m)
 {
     os_poll_func = js_os_poll;
 
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
     {
         JSRuntime *rt = JS_GetRuntime(ctx);
         JSThreadState *ts = JS_GetRuntimeOpaque(rt);
@@ -4021,7 +4031,7 @@ JSModuleDef *js_init_module_os(JSContext *ctx, const char *module_name)
     if (!m)
         return NULL;
     JS_AddModuleExportList(ctx, m, js_os_funcs, countof(js_os_funcs));
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
     JS_AddModuleExport(ctx, m, "Worker");
 #endif
     return m;
@@ -4097,8 +4107,10 @@ void js_std_add_helpers(JSContext *ctx, int argc, char **argv, int use_module_lo
 
     JS_SetPropertyStr(ctx, global_obj, "print",
                       JS_NewCFunction(ctx, js_print, "print", 1));
+#ifndef CONFIG_BYTECODE_ONLY_RUNTIME
     JS_SetPropertyStr(ctx, global_obj, "__loadScript",
                       JS_NewCFunction(ctx, js_loadScript, "__loadScript", 1));
+#endif
 
     JS_FreeValue(ctx, global_obj);
 }
@@ -4122,7 +4134,7 @@ void js_std_init_handlers(JSRuntime *rt)
 
     JS_SetRuntimeOpaque(rt, ts);
 
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
     /* set the SharedArrayBuffer memory handlers */
     {
         JSSharedArrayBufferFunctions sf;
@@ -4162,7 +4174,7 @@ void js_std_free_handlers(JSRuntime *rt)
         free(rp);
     }
 
-#ifdef USE_WORKER
+#if defined(USE_WORKER) && !defined(CONFIG_BYTECODE_ONLY_RUNTIME)
     js_free_message_pipe(ts->recv_pipe);
     js_free_message_pipe(ts->send_pipe);
 
