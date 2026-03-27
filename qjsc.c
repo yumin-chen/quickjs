@@ -36,6 +36,10 @@
 #include "cutils.h"
 #include "quickjs-libc.h"
 
+#ifdef CONFIG_BYTECODE_ONLY_RUNTIME
+#error "qjsc must be built with the full QuickJS engine"
+#endif
+
 typedef struct {
     char *name;
     char *short_name;
@@ -78,6 +82,15 @@ static const FeatureEntry feature_list[] = {
     { "module-loader", NULL },
     { "weakref", "WeakRef" },
 };
+
+#define FE_MASK(i) ((uint64_t)1 << (i))
+#define BYTECODE_ONLY_TRIGGER_MASK \
+    (FE_MASK(1) | FE_MASK(3) | FE_MASK(4) | FE_MASK(FE_MODULE_LOADER))
+
+static BOOL runtime_needs_parser(void)
+{
+    return (feature_bitmap & BYTECODE_ONLY_TRIGGER_MASK) != 0;
+}
 
 void namelist_add(namelist_t *lp, const char *name, const char *short_name,
                   int flags)
@@ -477,6 +490,8 @@ static int output_executable(const char *out_filename, const char *cfilename,
 
     lto_suffix = "";
     bn_suffix = "";
+    if (!runtime_needs_parser())
+        bn_suffix = "-bytecode";
 
     arg = argv;
     *arg++ = CONFIG_CC;
@@ -841,14 +856,10 @@ int main(int argc, char **argv)
                     (unsigned int)stack_size);
         }
 
-        /* add the module loader if necessary */
-        if (feature_bitmap & (1 << FE_MODULE_LOADER)) {
-            fprintf(fo, "  JS_SetModuleLoaderFunc2(rt, NULL, js_module_loader, js_module_check_attributes, NULL);\n");
-        }
-
         fprintf(fo,
                 "  ctx = JS_NewCustomContext(rt);\n"
-                "  js_std_add_helpers(ctx, argc, argv);\n");
+                "  js_std_add_helpers(ctx, argc, argv, %d);\n",
+                (feature_bitmap & (1 << FE_MODULE_LOADER)) != 0);
 
         for(i = 0; i < cname_list.count; i++) {
             namelist_entry_t *e = &cname_list.array[i];

@@ -482,7 +482,7 @@ int main(int argc, char **argv)
     }
 
     if (!empty_run) {
-        js_std_add_helpers(ctx, argc - optind, argv + optind);
+        js_std_add_helpers(ctx, argc - optind, argv + optind, TRUE);
 
         /* make 'std' and 'os' visible to non module code */
         if (load_std) {

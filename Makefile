@@ -216,9 +216,9 @@ else
 QJSC_CC=$(CC)
 QJSC=./qjsc$(EXE)
 endif
-PROGS+=libquickjs.a
+PROGS+=libquickjs.a libquickjs-bytecode.a
 ifdef CONFIG_LTO
-PROGS+=libquickjs.lto.a
+PROGS+=libquickjs.lto.a libquickjs-bytecode.lto.a
 endif
 
 # examples
@@ -244,6 +244,7 @@ endif
 all: $(OBJDIR) $(OBJDIR)/quickjs.check.o $(OBJDIR)/qjs.check.o $(PROGS)
 
 QJS_LIB_OBJS=$(OBJDIR)/quickjs.o $(OBJDIR)/dtoa.o $(OBJDIR)/libregexp.o $(OBJDIR)/libunicode.o $(OBJDIR)/cutils.o $(OBJDIR)/quickjs-libc.o
+QJS_LIB_BYTECODE_OBJS=$(patsubst $(OBJDIR)/%.o, $(OBJDIR)/%.bytecode.o, $(QJS_LIB_OBJS))
 
 QJS_OBJS=$(OBJDIR)/qjs.o $(OBJDIR)/repl.o $(QJS_LIB_OBJS)
 
@@ -303,8 +304,14 @@ endif
 libquickjs$(LTOEXT).a: $(QJS_LIB_OBJS)
 	$(AR) rcs $@ $^
 
+libquickjs-bytecode$(LTOEXT).a: $(QJS_LIB_BYTECODE_OBJS)
+	$(AR) rcs $@ $^
+
 ifdef CONFIG_LTO
 libquickjs.a: $(patsubst %.o, %.nolto.o, $(QJS_LIB_OBJS))
+	$(AR) rcs $@ $^
+
+libquickjs-bytecode.a: $(patsubst %.o, %.bytecode.nolto.o, $(QJS_LIB_OBJS))
 	$(AR) rcs $@ $^
 endif # CONFIG_LTO
 
@@ -343,6 +350,12 @@ $(OBJDIR)/%.pic.o: %.c | $(OBJDIR)
 
 $(OBJDIR)/%.nolto.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_NOLTO) -c -o $@ $<
+
+$(OBJDIR)/%.bytecode.o: %.c | $(OBJDIR)
+	$(CC) $(CFLAGS_OPT) -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
+
+$(OBJDIR)/%.bytecode.nolto.o: %.c | $(OBJDIR)
+	$(CC) $(CFLAGS_NOLTO) -DCONFIG_BYTECODE_ONLY_RUNTIME -c -o $@ $<
 
 $(OBJDIR)/%.debug.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS_DEBUG) -c -o $@ $<
@@ -388,6 +401,8 @@ HELLO_SRCS=examples/hello.js
 HELLO_OPTS=-fno-string-normalize -fno-map -fno-promise -fno-typedarray \
            -fno-typedarray -fno-regexp -fno-json -fno-eval -fno-proxy \
            -fno-date -fno-module-loader
+
+BYTECODE_RUNTIME_OPTS=-fno-eval -fno-regexp -fno-json -fno-module-loader
 
 hello.c: $(QJSC) $(HELLO_SRCS)
 	$(QJSC) -e $(HELLO_OPTS) -o $@ $(HELLO_SRCS)
@@ -464,6 +479,27 @@ endif
 
 stats: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) -qd
+
+test-bytecode-runtime: qjsc$(EXE) libquickjs-bytecode.lto.a
+	./qjsc -e $(BYTECODE_RUNTIME_OPTS) -o hello_bytecode.c examples/hello.js
+	$(CC) $(CFLAGS_OPT) -flto -o hello_bytecode hello_bytecode.c libquickjs-bytecode.lto.a $(LIBS)
+	./hello_bytecode | grep "Hello World"
+	./qjsc -e -m $(BYTECODE_RUNTIME_OPTS) -o test_bytecode_runtime.c tests/test_bytecode_runtime.js
+	$(CC) $(CFLAGS_OPT) -flto -o test_bytecode_runtime test_bytecode_runtime.c libquickjs-bytecode.lto.a $(LIBS)
+	./test_bytecode_runtime
+	@if nm hello_bytecode | grep -E "__JS_EvalInternal|js_parse_program|JS_ParseJSON3|js_compile_regexp|JS_LoadModule"; then \
+		echo "Error: forbidden symbols found in hello_bytecode"; \
+		nm hello_bytecode | grep -E "__JS_EvalInternal|js_parse_program|JS_ParseJSON3|js_compile_regexp|JS_LoadModule"; \
+		exit 1; \
+	fi
+	@echo "Testing corrupted bytecode rejection..."
+	echo "corrupted" > /tmp/bad.bin
+	@if ./hello_bytecode /tmp/bad.bin 2>&1 | grep -q "Segmentation fault"; then \
+		echo "Error: Bytecode-only runtime crashed on corrupted input"; \
+		exit 1; \
+	fi
+	@echo "Bytecode-only runtime test passed"
+	rm -f hello_bytecode hello_bytecode.c test_bytecode_runtime test_bytecode_runtime.c /tmp/bad.bin
 
 microbench: qjs$(EXE)
 	$(WINE) ./qjs$(EXE) --std tests/microbench.js
